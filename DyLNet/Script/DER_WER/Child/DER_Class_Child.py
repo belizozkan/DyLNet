@@ -77,7 +77,6 @@ def main():
 
     # Utiliser la fonction pour calculer le DER
     der_results = calculate_der(hypothesis_fileder, reference_fileder)
-    print(der_results)
 
     # Boxplot
     classes = list(der_results.keys())
@@ -86,14 +85,15 @@ def main():
     x = np.arange(len(classes))  # Les emplacements des étiquettes
     width = 0.35  # La largeur des barres
 
-    fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+    fig, axs = plt.subplots(nrows=2, gridspec_kw={'height_ratios': [3, 1]})
+    ax1, ax2 = axs
     rects1 = ax1.bar(x, der_values, width, label='DER')
 
     # Ajouter des étiquettes pour les axes, le titre et les étiquettes personnalisées de l'axe des x, etc.
     ax1.set_ylabel('Scores')
     ax1.set_title('Scores DER par classe pour les enfants')
     ax1.set_xticks(x)
-    ax1.set_xticklabels(classes)
+    ax1.set_xticklabels(classes,  rotation=45, ha='right')
     ax1.legend()
 
     # Nuage de points

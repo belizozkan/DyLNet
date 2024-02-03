@@ -83,7 +83,8 @@ def main():
     width = 0.35  # La largeur des barres
 
     # Créer des sous-graphiques pour le barplot et le scatterplot
-    fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+    fig, axs = plt.subplots(nrows=2, gridspec_kw={'height_ratios': [3, 1]})
+    ax1, ax2 = axs
 
     # Barplot pour le DER
     rects1 = ax1.bar(x, der_values, width, label='DER')
@@ -92,7 +93,7 @@ def main():
     ax1.set_ylabel('Scores')
     ax1.set_title('Scores DER par locuteur pour les enfants')
     ax1.set_xticks(x)
-    ax1.set_xticklabels(speakers)
+    ax1.set_xticklabels(speakers,  rotation=45, ha='right')
     ax1.legend()
 
     # Scatterplot
