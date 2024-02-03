@@ -1,64 +1,76 @@
-from unidecode import unidecode
-from jiwer import compute_measures
+from jiwer import compute_measures, process_words, visualize_alignment
 import json
+"""
+Ce script ne concerne que les adultes
+WER pour toutes les classes
+fichiers d'entrée : fichier reference converti par eaf2jsonWER et fichier hypothese converti par txt2json
+sorties : WER par classe avec détails (détails: total sub, total insertion, total deletion) et segments hypotheses, segments references avec les insetions, deletions et les subs
+"""
+# Fonction pour calculer le taux d'erreur de mot (WER)
+def calculate_wer(hypothesis_file, reference_file):
+    # Charger les données d'hypothèse depuis le fichier JSON
+    with open(hypothesis_file, 'r') as f:
+        hypothesis_data = json.load(f)
 
-def process_text_file(file_path):
-    with open(file_path, 'r', encoding='utf-8') as file:
-        lines = file.readlines()
+    # Charger les données de référence depuis le fichier JSON
+    with open(reference_file, 'r') as f:
+        reference_data = json.load(f)
 
-    lines = [line.strip() for line in lines]
-    segment_list = []
-    class_wer_dict = {}
+    # Initialiser des structures pour stocker les mesures par classe et les détails par classe
+    measures_by_class = {}
+    details_by_class = {}
 
-    for i in range(12, len(lines), 5):
-        file_id_full = lines[i]  
-        file_id_parts = file_id_full.split("_")
-        file_id = "_".join(file_id_parts[:-2]).strip()
+    # Parcourir les segments d'hypothèse
+    for h_segment in hypothesis_data:
+        # Parcourir les segments de référence
+        for r_segment in reference_data:
+            # Vérifier si les segments appartiennent à la même classe et au même locuteur
+            if h_segment['class_id'] == r_segment['class_id']:
+                if h_segment['speaker_id'].startswith('1') and r_segment['speaker_id'].startswith('1'):
+                    # Vérifier si les segments correspondent en termes de fichier et de temps (tolérance de 0.1 seconde)
+                    if (h_segment['file_id'] == r_segment['file_id'] and
+                        (h_segment['start_time'] == r_segment['start_time'] or abs(h_segment['end_time'] - r_segment['end_time']) < 0.1)):
+                            # Extraire des informations spécifiques aux segments
+                            class_id = h_segment['class_id']
+                            h_text = h_segment['hypothesis']
+                            r_text = r_segment['transcript']
 
-        line_parts = file_id.split("-")
-        if len(line_parts) > 2:
-            class_id = line_parts[0].strip()
-        else:
-            continue
+                            # Calculer les mesures WER et obtenir l'alignement des mots
+                            measures = compute_measures(r_text, h_text)
+                            alignment = process_words([r_text], [h_text])
 
-        hypothesis = lines[i + 3]  
-        processed_hypothesis = ' '.join(hypothesis.split(';')).lower().strip()
-        processed_hypothesis = unidecode(processed_hypothesis)
+                            # Formater les détails pour l'affichage
+                            details = h_segment['file_id'] + "\nSegment WER: " + str(measures['wer']) + ", Total Deletions: " + str(measures['deletions']) + ", Total Insertions: " + str(measures['insertions']) + ", Total Substitutions: " + str(measures['substitutions']) + "\n" + visualize_alignment(alignment, show_measures=False, skip_correct=False).replace('sentence 1\n', '')
 
-        references = lines[i + 1]
-        processed_reference = ' '.join(references.split(';')).lower().strip()
-        processed_reference = unidecode(processed_reference)
+                            # Stocker les mesures par classe
+                            if class_id not in measures_by_class:
+                                measures_by_class[class_id] = {"total_errors": 0, "total_words": 0, "deletions": 0, "insertions": 0, "substitutions": 0}
+                                details_by_class[class_id] = []
+                            measures_by_class[class_id]["total_errors"] += measures["wer"] * len(h_text.split())
+                            measures_by_class[class_id]["total_words"] += len(h_text.split())
+                            measures_by_class[class_id]["deletions"] += measures["deletions"]
+                            measures_by_class[class_id]["insertions"] += measures["insertions"]
+                            measures_by_class[class_id]["substitutions"] += measures["substitutions"]
+                            details_by_class[class_id].append(details)
 
-        segment_dict = {
-            "file_id": file_id,
-            "hypothesis": processed_hypothesis,
-            "reference": processed_reference
-        }
+    # Calculer le WER total pour chaque classe
+    total_wer_by_class = {class_id: {"wer": measures["total_errors"] / measures["total_words"] if measures["total_words"] > 0 else 0, "deletions": measures["deletions"], "insertions": measures["insertions"], "substitutions": measures["substitutions"]} for class_id, measures in measures_by_class.items()}
 
-        segment_list.append(segment_dict)
+    return total_wer_by_class, details_by_class
 
-        if class_id not in class_wer_dict:
-            class_wer_dict[class_id] = {"total_errors": 0, "total_words": 0, "deletions": 0, "insertions": 0, "substitutions": 0}
+# Fonction principale
+def main():
+    hypothesis_file = 'C:\\Users\\beliz\\Documents\\Cours\\IDL\\IDL M2\\DyLNet\\Data\\Comparaison_WER\\hyp.json'
+    reference_file = 'C:\\Users\\beliz\\Documents\\Cours\\IDL\\IDL M2\\DyLNet\\Data\\Comparaison_WER\\ref.json'
+    # Utiliser la fonction pour calculer le WER
+    measures_results, details_results = calculate_wer(hypothesis_file, reference_file)
+    
+    # Afficher les résultats
+    for class_id, measures in measures_results.items():
+        print(f'Class ID: {class_id}, WER: {measures["wer"]}, Total Deletions: {measures["deletions"]}, Total Insertions: {measures["insertions"]}, Total Substitutions: {measures["substitutions"]}')
+        for details in details_results[class_id]:
+            print(details)
 
-        measures = compute_measures(processed_reference, processed_hypothesis)
-        error_rate = measures['wer']
-        class_wer_dict[class_id]["total_errors"] += error_rate
-        class_wer_dict[class_id]["total_words"] += len(processed_reference.split())
-        class_wer_dict[class_id]["deletions"] += measures['deletions']
-        class_wer_dict[class_id]["insertions"] += measures['insertions']
-        class_wer_dict[class_id]["substitutions"] += measures['substitutions']
-
-    return segment_list, class_wer_dict
-
-file_path = "C:\\Users\\beliz\\Documents\\Cours\\IDL\\IDL M2\\DyLNet\\Data\\Test\\Test.txt"
-
-segment_list, class_wer_dict = process_text_file(file_path)
-
-for class_id, metrics in class_wer_dict.items():
-    total_words = metrics["total_words"]
-    global_wer = metrics["total_errors"] / total_words * 100
-    deletions = metrics["deletions"]
-    insertions = metrics["insertions"]
-    substitutions = metrics["substitutions"]
-
-    print(f"Class {class_id}: Global WER = {global_wer:.2f}%, Total Words = {total_words}, Deletions = {deletions}, Insertions = {insertions}, Substitutions = {substitutions}")
+# Exécuter la fonction principale si le script est exécuté en tant que programme principal
+if __name__ == "__main__":
+    main()

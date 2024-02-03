@@ -1,0 +1,125 @@
+import os
+from pyannote.core import Segment, Annotation
+from pyannote.metrics.detection import DetectionErrorRate
+import json
+"""
+Ce script concerne les adultes et les enfants
+DER pour toutes les classes
+fichiers d'entrée : fichier reference converti par eaf2jsonDER et fichier hypothese converti par textgrid2json
+sorties : DER par classe avec détails (détails: total missed detection et total false alarm) et segments hypotheses, segments references, segments consideré comme missed alarms et false alarms
+"""
+# Fonction pour charger les annotations depuis le fichier JSON
+def load_annotation_from_json(json_file):
+    annotations_by_class_file = {}
+
+    with open(json_file, 'r') as file:
+        data = json.load(file)
+        for segment_data in data:
+            start_time = segment_data.get('start_time', 0)
+            end_time = segment_data.get('end_time', 0)
+            segment = Segment(start_time, end_time)
+            label = str(segment_data.get('file_id', ''))
+            class_id = segment_data.get('class_id', '')  
+            situation = segment_data.get('situation', '')
+
+            # Créer une structure pour stocker les annotations par classe, fichier et segment
+            if class_id not in annotations_by_class_file:
+                annotations_by_class_file[class_id] = {}
+            if label not in annotations_by_class_file[class_id]:
+                annotations_by_class_file[class_id][label] = Annotation()
+
+            annotations_by_class_file[class_id][label][segment] = label
+
+    return annotations_by_class_file
+
+# Charger les annotations de référence et d'hypothèse
+reference_annotations = load_annotation_from_json("C:\\Users\\beliz\\Documents\\Cours\\IDL\\IDL M2\\DyLNet\\Data\\Comparaison_DER\\ref.json")
+hypothesis_annotations = load_annotation_from_json("C:\\Users\\beliz\\Documents\\Cours\\IDL\\IDL M2\\DyLNet\\Data\\Comparaison_DER\\hyp.json")
+
+# Fonction pour obtenir les segments manqués et les fausses alarmes
+def get_missed_and_false_alarm_segments(reference_annotation, hypothesis_annotation):
+    reference_segments = set(reference_annotation.itertracks())
+    hypothesis_segments = set(hypothesis_annotation.itertracks())
+
+    missed_detections = reference_segments - hypothesis_segments
+    false_alarms = hypothesis_segments - reference_segments
+
+    return missed_detections, false_alarms
+
+# Fonction pour obtenir les segments corrects
+def get_correct_segments(reference_annotation, hypothesis_annotation):
+    reference_segments = set(reference_annotation.itertracks())
+    hypothesis_segments = set(hypothesis_annotation.itertracks())
+
+    correct_detections = reference_segments & hypothesis_segments
+
+    return correct_detections
+
+# Fonction pour formater un segment
+def format_segment(segment, file_id):
+    start, end = segment
+    start_hour, start_min = divmod(start, 3600)
+    start_min, start_sec = divmod(start_min, 60)
+    end_hour, end_min = divmod(end, 3600)
+    end_min, end_sec = divmod(end_min, 60)
+    return f"[ {start_hour:02.0f}:{start_min:02.0f}:{start_sec:06.3f} -->  {end_hour:02.0f}:{end_min:02.0f}:{end_sec:06.3f}] _ {file_id}"
+
+# Parcourir les annotations par classe
+for class_id, file_annotations in reference_annotations.items():  
+    der = DetectionErrorRate()
+    total_miss = 0
+    total_false_alarm = 0
+    total_total = 0
+
+    # Parcourir les fichiers et annotations de référence pour chaque classe
+    for file_id, reference_annotation in file_annotations.items():
+        hypothesis_annotation = hypothesis_annotations.get(class_id, {}).get(file_id, Annotation())  
+        components = der(reference_annotation, hypothesis_annotation, detailed=True)
+
+        total_miss += components['miss']
+        total_false_alarm += components['false alarm']
+        total_total += components['total']
+
+    # Calculer et afficher le taux d'erreur de détection (DER) pour chaque classe
+    if total_total != 0:
+        error_rate = (total_miss + total_false_alarm) / total_total
+        print(f'Detection Error Rate for Class {class_id}:')  
+        print(f'Total Missed Detections: {total_miss:.2f}')
+        print(f'Total False Alarms: {total_false_alarm:.2f}')
+        print(f'Total References: {total_total:.2f}')
+        print(f'Error Rate: {error_rate:.2%}\n')
+    else:
+        print(f'No annotations found for Class {class_id}\n')
+
+    # Afficher les segments manqués, les fausses alarmes et les segments corrects pour chaque fichier
+    for file_id, reference_annotation in file_annotations.items():
+        hypothesis_annotation = hypothesis_annotations.get(class_id, {}).get(file_id, Annotation())
+        missed_detections, false_alarms = get_missed_and_false_alarm_segments(reference_annotation, hypothesis_annotation)    
+        correct_detections = get_correct_segments(reference_annotation, hypothesis_annotation)
+
+        print(f'Reference segments for Class {class_id} in File {file_id}:')
+        print(reference_annotation)
+        print(f'Hypothesis segments for Class {class_id} in File {file_id}:')
+        print(hypothesis_annotation)
+        
+        print(f'Missed detections for Class {class_id} in File {file_id}:')
+        if not missed_detections:
+            print('There are no missed detections')
+        else:
+            for segment in missed_detections:
+                print(format_segment(segment[0], file_id))
+        
+        print(f'False alarms for Class {class_id} in File {file_id}:')
+        if not false_alarms:
+            print('There are no false alarms')
+        else:
+            for segment in false_alarms:
+                print(format_segment(segment[0], file_id))
+
+        print(f'Correct detections for Class {class_id} in File {file_id}:')
+        if not correct_detections:
+            print('There are no correct segments')
+        else:
+            for segment in correct_detections:
+                print(format_segment(segment[0], file_id))
+        print('\n')
